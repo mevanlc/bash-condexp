@@ -5,6 +5,7 @@
 
 pub mod ast;
 pub mod error;
+pub mod lex;
 
 pub use ast::{BinaryOp, Expr, Primary, UnaryOp, Word, WordPart};
 pub use error::{EvalError, ParseError};
