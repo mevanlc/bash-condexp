@@ -6,11 +6,13 @@
 pub mod ast;
 pub mod env;
 pub mod error;
+pub mod eval;
 pub mod fs_abs;
 pub mod lex;
 pub mod parse;
 
 pub use env::{Env, MapEnv, StdEnv};
+pub use eval::Evaluator;
 pub use fs_abs::{AccessMode, FileKind, FileStat, FileSystem, StdFs};
 pub use parse::parse;
 
