@@ -1,0 +1,20 @@
+[package]
+name = "bash-condexp"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+logos = "0.16.1"
+regex = "1.12.3"
+thiserror = "2.0.18"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3.27.0"
+
+[features]
+default = []
+# Enable conformance tests that shell out to `bash -c`. Requires bash on PATH.
+bash-conformance = []
