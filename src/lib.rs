@@ -10,6 +10,7 @@ pub mod eval;
 pub mod fs_abs;
 pub mod lex;
 pub mod parse;
+pub mod pattern;
 
 pub use env::{Env, MapEnv, StdEnv};
 pub use eval::Evaluator;

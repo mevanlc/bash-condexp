@@ -44,10 +44,23 @@ pub fn lex(input: &str) -> Result<Vec<Spanned<Token>>, ParseError> {
     let bytes = input.as_bytes();
     let mut out = Vec::new();
     let mut i = 0;
+    // After emitting `=~`, the next non-whitespace run is read as a regex
+    // word (regex metacharacters like (, ), |, *, ?, +, ^, $, ., < and >
+    // pass through as part of the word; only whitespace and `]]` terminate).
+    let mut regex_mode = false;
+
     while i < bytes.len() {
         let c = bytes[i];
         if c.is_ascii_whitespace() {
             i += 1;
+            continue;
+        }
+
+        if regex_mode {
+            let (word, end) = read_regex_word(bytes, i)?;
+            out.push(span(Token::Word(word), i, end));
+            i = end;
+            regex_mode = false;
             continue;
         }
 
@@ -85,6 +98,7 @@ pub fn lex(input: &str) -> Result<Vec<Spanned<Token>>, ParseError> {
         if c == b'=' && bytes.get(i + 1) == Some(&b'~') {
             out.push(span(Token::RegexEq, i, i + 2));
             i += 2;
+            regex_mode = true;
             continue;
         }
 
@@ -133,6 +147,72 @@ pub fn lex(input: &str) -> Result<Vec<Spanned<Token>>, ParseError> {
         i = end;
     }
     Ok(out)
+}
+
+/// Read a regex-RHS word. Almost everything is literal; only whitespace and
+/// an unquoted closing `]]` (when not inside a bracket expression) terminate.
+/// Quotes and `$var` still work.
+fn read_regex_word(bytes: &[u8], start: usize) -> Result<(Word, usize), ParseError> {
+    let mut word = Word::default();
+    let mut lit = String::new();
+    let mut i = start;
+    let mut bracket_depth: i32 = 0;
+
+    while i < bytes.len() {
+        let c = bytes[i];
+        if c.is_ascii_whitespace() && bracket_depth == 0 {
+            break;
+        }
+        if c == b']' && bytes.get(i + 1) == Some(&b']') && bracket_depth == 0 {
+            break;
+        }
+        if c == b'[' {
+            bracket_depth += 1;
+        } else if c == b']' && bracket_depth > 0 {
+            bracket_depth -= 1;
+        }
+        match c {
+            b'\'' => {
+                flush_literal(&mut word, &mut lit);
+                let (text, end) = read_single_quoted(bytes, i)?;
+                word.push(WordPart::Quoted(text));
+                i = end;
+            }
+            b'"' => {
+                flush_literal(&mut word, &mut lit);
+                let end = read_double_quoted(bytes, i, &mut word)?;
+                i = end;
+            }
+            b'$' => {
+                if let Some((var, end)) = read_var_ref(bytes, i) {
+                    flush_literal(&mut word, &mut lit);
+                    word.push(WordPart::Var(var));
+                    i = end;
+                } else {
+                    lit.push('$');
+                    i += 1;
+                }
+            }
+            b'\\' => {
+                if let Some(&nc) = bytes.get(i + 1) {
+                    // In regex context we preserve the backslash so the
+                    // regex engine sees `\.`, `\d`, etc. as written.
+                    lit.push('\\');
+                    lit.push(nc as char);
+                    i += 2;
+                } else {
+                    lit.push('\\');
+                    i += 1;
+                }
+            }
+            _ => {
+                lit.push(c as char);
+                i += 1;
+            }
+        }
+    }
+    flush_literal(&mut word, &mut lit);
+    Ok((word, i))
 }
 
 fn span<T>(value: T, start: usize, end: usize) -> Spanned<T> {

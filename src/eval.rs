@@ -10,6 +10,7 @@ use crate::ast::{BinaryOp, Expr, Primary, UnaryOp, Word, WordPart};
 use crate::env::Env;
 use crate::error::EvalError;
 use crate::fs_abs::{AccessMode, FileKind, FileStat, FileSystem};
+use crate::pattern;
 
 pub struct Evaluator<'a, E: Env, F: FileSystem> {
     env: &'a mut E,
@@ -166,12 +167,38 @@ impl<'a, E: Env, F: FileSystem> Evaluator<'a, E, F> {
                 let r = self.expand(rhs);
                 Ok(l.as_bytes() > r.as_bytes())
             }
-            // Glob / regex are wired in the next step.
-            GlobMatch | GlobNotMatch | RegexMatch => {
-                Err(EvalError::UnsupportedExpansion(format!(
-                    "operator `{}` not yet wired to matcher",
-                    op.token()
-                )))
+            // Pattern (extglob-lite) and regex matching.
+            GlobMatch | GlobNotMatch => {
+                let l = self.expand(lhs);
+                let nocase = self.env.shell_opt("nocasematch");
+                let env = &*self.env;
+                let re = pattern::compile_glob(rhs, nocase, |name| {
+                    env.var(name).unwrap_or("").to_string()
+                })?;
+                let m = pattern::matches_glob(&re, &l);
+                Ok(if matches!(op, GlobMatch) { m } else { !m })
+            }
+            RegexMatch => {
+                let l = self.expand(lhs);
+                let nocase = self.env.shell_opt("nocasematch");
+                // Borrow env immutably to compile, then drop the borrow
+                // before potentially calling set_bash_rematch.
+                let re = {
+                    let env = &*self.env;
+                    pattern::compile_regex(rhs, nocase, |name| {
+                        env.var(name).unwrap_or("").to_string()
+                    })?
+                };
+                if let Some(caps) = re.captures(&l) {
+                    let groups: Vec<Option<String>> = caps
+                        .iter()
+                        .map(|m| m.map(|m| m.as_str().to_string()))
+                        .collect();
+                    self.env.set_bash_rematch(&groups);
+                    Ok(true)
+                } else {
+                    Ok(false)
+                }
             }
             // Arithmetic
             ArithEq | ArithNe | ArithLt | ArithLe | ArithGt | ArithGe => {
@@ -354,4 +381,46 @@ mod tests {
         assert!(run("-o nocasematch", &mut env));
         assert!(!run("-o noclobber", &mut env));
     }
+
+    #[test]
+    fn glob_match() {
+        let mut env = MapEnv::new().with_var("f", "report.txt");
+        assert!(run("$f == *.txt", &mut env));
+        assert!(!run("$f == *.md", &mut env));
+        assert!(run("$f != *.md", &mut env));
+    }
+
+    #[test]
+    fn glob_quoted_metas_are_literal() {
+        // Quoted "*.txt" pattern should match only the literal "*.txt".
+        let mut env = MapEnv::new();
+        assert!(run(r#"'*.txt' == "*.txt""#, &mut env));
+        assert!(!run(r#"foo.txt == "*.txt""#, &mut env));
+    }
+
+    #[test]
+    fn glob_nocasematch() {
+        let mut env = MapEnv::new()
+            .with_var("f", "Report.TXT")
+            .with_option("nocasematch", true);
+        assert!(run("$f == *.txt", &mut env));
+    }
+
+    #[test]
+    fn regex_basic() {
+        let mut env = MapEnv::new().with_var("line", "  ab cd");
+        assert!(run(r"$line =~ ^[[:space:]]*(a)?b", &mut env));
+    }
+
+    #[test]
+    fn regex_populates_rematch() {
+        let mut env = MapEnv::new().with_var("v", "user-42");
+        let r = run(r"$v =~ ^([a-z]+)-([0-9]+)$", &mut env);
+        assert!(r);
+        assert_eq!(env.last_rematch.len(), 3);
+        assert_eq!(env.last_rematch[0].as_deref(), Some("user-42"));
+        assert_eq!(env.last_rematch[1].as_deref(), Some("user"));
+        assert_eq!(env.last_rematch[2].as_deref(), Some("42"));
+    }
+
 }
