@@ -248,7 +248,7 @@ impl<'a, E: Env, F: FileSystem> Evaluator<'a, E, F> {
         for p in &w.parts {
             match p {
                 WordPart::Literal(s) | WordPart::Quoted(s) => out.push_str(s),
-                WordPart::Var(name) => {
+                WordPart::Var(name) | WordPart::QuotedVar(name) => {
                     if let Some(v) = self.env.var(name) {
                         out.push_str(v);
                     }

@@ -61,6 +61,11 @@
 //! - Extglob (`?(...)`, `*(...)`, `+(...)`, `@(...)`, `!(...)`) is not
 //!   yet supported in `==` / `!=` patterns.
 //! - `<` and `>` use byte comparison, not locale-aware `strcoll`.
+//! - `=~` uses the Rust `regex` crate, which is close to POSIX ERE but
+//!   differs in a few edge cases — notably it rejects lone `\x` (it
+//!   reserves `\x..` for hex escapes), where bash treats `\x` as literal
+//!   `x`. POSIX bracket equivalence/collation classes (`[[=d=]]`,
+//!   `[[.d.]]`) are also not supported.
 //!
 //! ## Hosting your own environment / filesystem
 //!

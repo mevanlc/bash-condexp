@@ -211,7 +211,7 @@ impl fmt::Display for Word {
         for p in &self.parts {
             match p {
                 WordPart::Literal(s) | WordPart::Quoted(s) => f.write_str(s)?,
-                WordPart::Var(name) => write!(f, "${{{}}}", name)?,
+                WordPart::Var(name) | WordPart::QuotedVar(name) => write!(f, "${{{}}}", name)?,
             }
         }
         Ok(())
@@ -225,6 +225,11 @@ pub enum WordPart {
     /// Quoted literal text (single- or double-quoted). Quoting affects how
     /// the bytes are treated inside pattern/regex RHS but not their values.
     Quoted(String),
-    /// A `$var` or `${var}` reference. Expanded at eval time.
+    /// An unquoted `$var` / `${var}` reference. The expanded value retains
+    /// pattern/regex metacharacter specialness on the RHS of `==` / `=~`.
     Var(String),
+    /// A `$var` / `${var}` reference that appeared inside double quotes.
+    /// The expanded value is matched **literally** on the RHS of `==` /
+    /// `=~`, per bash's "quoted variable expansion is literal" rule.
+    QuotedVar(String),
 }

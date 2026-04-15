@@ -370,7 +370,7 @@ fn read_double_quoted(bytes: &[u8], start: usize, word: &mut Word) -> Result<usi
                 if !buf.is_empty() {
                     word.push(WordPart::Quoted(std::mem::take(&mut buf)));
                 }
-                word.push(WordPart::Var(var));
+                word.push(WordPart::QuotedVar(var));
                 i = end;
                 continue;
             }

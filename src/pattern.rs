@@ -26,8 +26,10 @@ fn segments(word: &Word, expand_var: impl Fn(&str) -> String) -> Vec<(String, bo
         match p {
             WordPart::Literal(s) => out.push((s.clone(), true)),
             WordPart::Quoted(s) => out.push((s.clone(), false)),
-            // Per spec: an unquoted $var expansion is treated as pattern.
+            // Per spec: an unquoted $var expansion is treated as pattern,
+            // but a quoted "$var" expansion is matched literally.
             WordPart::Var(name) => out.push((expand_var(name), true)),
+            WordPart::QuotedVar(name) => out.push((expand_var(name), false)),
         }
     }
     out
@@ -74,6 +76,7 @@ where
             WordPart::Literal(s) => pattern.push_str(s),
             WordPart::Quoted(s) => pattern.push_str(&regex::escape(s)),
             WordPart::Var(name) => pattern.push_str(&expand_var(name)),
+            WordPart::QuotedVar(name) => pattern.push_str(&regex::escape(&expand_var(name))),
         }
     }
     let mut builder = regex::RegexBuilder::new(&pattern);

@@ -17,7 +17,19 @@
 use bash_condexp::{Evaluator, MapEnv, StdFs, parse};
 use std::collections::BTreeMap;
 use std::io::Write;
+use std::path::PathBuf;
 use std::process::Command;
+
+fn which_bash() -> PathBuf {
+    let path = std::env::var("PATH").unwrap_or_default();
+    for dir in path.split(':') {
+        let p = PathBuf::from(dir).join("bash");
+        if p.is_file() {
+            return p;
+        }
+    }
+    PathBuf::from("bash")
+}
 
 fn vars_to_map(pairs: &[(&str, &str)]) -> MapEnv {
     let mut e = MapEnv::new();
@@ -46,10 +58,14 @@ fn bashes(expr: &str, vars: &BTreeMap<String, String>) -> bool {
         .map(str::trim)
         .unwrap_or(body);
     let script = format!("[[ {body} ]]");
-    let mut cmd = Command::new("bash");
+    let bash_path = which_bash();
+    let mut cmd = Command::new(&bash_path);
     cmd.arg("-c").arg(&script);
     cmd.env_clear();
-    cmd.env("PATH", "/usr/bin:/bin:/usr/local/bin");
+    cmd.env(
+        "PATH",
+        std::env::var("PATH").unwrap_or_else(|_| "/usr/bin:/bin".into()),
+    );
     for (k, v) in vars {
         cmd.env(k, v);
     }
