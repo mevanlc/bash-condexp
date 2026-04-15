@@ -44,10 +44,12 @@ pub fn lex(input: &str) -> Result<Vec<Spanned<Token>>, ParseError> {
     let bytes = input.as_bytes();
     let mut out = Vec::new();
     let mut i = 0;
-    // After emitting `=~`, the next non-whitespace run is read as a regex
-    // word (regex metacharacters like (, ), |, *, ?, +, ^, $, ., < and >
-    // pass through as part of the word; only whitespace and `]]` terminate).
-    let mut regex_mode = false;
+    // After emitting `==` / `!=` / `=~`, the next non-whitespace run is
+    // read with the special word reader: regex/glob metacharacters
+    // (parens, |, *, ?, +, ^, $, ., <, >, and most importantly nested
+    // [...] including `[[:class:]]`) pass through as part of the word;
+    // only whitespace and an unquoted top-level `]]` terminate.
+    let mut pattern_or_regex_mode = false;
 
     while i < bytes.len() {
         let c = bytes[i];
@@ -56,11 +58,11 @@ pub fn lex(input: &str) -> Result<Vec<Spanned<Token>>, ParseError> {
             continue;
         }
 
-        if regex_mode {
-            let (word, end) = read_regex_word(bytes, i)?;
+        if pattern_or_regex_mode {
+            let (word, end) = read_pattern_word(bytes, i)?;
             out.push(span(Token::Word(word), i, end));
             i = end;
-            regex_mode = false;
+            pattern_or_regex_mode = false;
             continue;
         }
 
@@ -88,17 +90,19 @@ pub fn lex(input: &str) -> Result<Vec<Spanned<Token>>, ParseError> {
         if c == b'=' && bytes.get(i + 1) == Some(&b'=') {
             out.push(span(Token::Eq, i, i + 2));
             i += 2;
+            pattern_or_regex_mode = true;
             continue;
         }
         if c == b'!' && bytes.get(i + 1) == Some(&b'=') {
             out.push(span(Token::NotEq, i, i + 2));
             i += 2;
+            pattern_or_regex_mode = true;
             continue;
         }
         if c == b'=' && bytes.get(i + 1) == Some(&b'~') {
             out.push(span(Token::RegexEq, i, i + 2));
             i += 2;
-            regex_mode = true;
+            pattern_or_regex_mode = true;
             continue;
         }
 
@@ -116,6 +120,7 @@ pub fn lex(input: &str) -> Result<Vec<Spanned<Token>>, ParseError> {
             b'=' => {
                 out.push(span(Token::Eq, i, i + 1));
                 i += 1;
+                pattern_or_regex_mode = true;
                 continue;
             }
             b'<' => {
@@ -149,10 +154,11 @@ pub fn lex(input: &str) -> Result<Vec<Spanned<Token>>, ParseError> {
     Ok(out)
 }
 
-/// Read a regex-RHS word. Almost everything is literal; only whitespace and
-/// an unquoted closing `]]` (when not inside a bracket expression) terminate.
-/// Quotes and `$var` still work.
-fn read_regex_word(bytes: &[u8], start: usize) -> Result<(Word, usize), ParseError> {
+/// Read a pattern-or-regex-RHS word. Almost everything is literal; only
+/// whitespace and an unquoted closing `]]` (when not inside a bracket
+/// expression) terminate. Quotes and `$var` still work. Used after
+/// `==` / `!=` / `=~`.
+fn read_pattern_word(bytes: &[u8], start: usize) -> Result<(Word, usize), ParseError> {
     let mut word = Word::default();
     let mut lit = String::new();
     let mut i = start;
