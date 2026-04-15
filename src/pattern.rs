@@ -20,13 +20,6 @@
 use crate::ast::{Word, WordPart};
 use regex::Regex;
 
-#[derive(Debug, Clone, Copy)]
-struct Seg<'a> {
-    text: &'a str,
-    /// `true` if this segment is unquoted (and thus interpreted as glob).
-    is_pattern: bool,
-}
-
 fn segments(word: &Word, expand_var: impl Fn(&str) -> String) -> Vec<(String, bool)> {
     let mut out = Vec::new();
     for p in &word.parts {
