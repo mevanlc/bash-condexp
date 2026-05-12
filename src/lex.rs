@@ -344,36 +344,36 @@ fn read_double_quoted(bytes: &[u8], start: usize, word: &mut Word) -> Result<usi
             }
             return Ok(i + 1);
         }
-        if c == b'\\' {
-            if let Some(&nc) = bytes.get(i + 1) {
-                // In double quotes, backslash escapes only a few chars;
-                // otherwise both the backslash and char are preserved.
-                match nc {
-                    b'$' | b'`' | b'"' | b'\\' | b'\n' => {
-                        if nc != b'\n' {
-                            buf.push(nc as char);
-                        }
-                        i += 2;
-                        continue;
-                    }
-                    _ => {
-                        buf.push('\\');
+        if c == b'\\'
+            && let Some(&nc) = bytes.get(i + 1)
+        {
+            // In double quotes, backslash escapes only a few chars;
+            // otherwise both the backslash and char are preserved.
+            match nc {
+                b'$' | b'`' | b'"' | b'\\' | b'\n' => {
+                    if nc != b'\n' {
                         buf.push(nc as char);
-                        i += 2;
-                        continue;
                     }
+                    i += 2;
+                    continue;
+                }
+                _ => {
+                    buf.push('\\');
+                    buf.push(nc as char);
+                    i += 2;
+                    continue;
                 }
             }
         }
-        if c == b'$' {
-            if let Some((var, end)) = read_var_ref(bytes, i) {
-                if !buf.is_empty() {
-                    word.push(WordPart::Quoted(std::mem::take(&mut buf)));
-                }
-                word.push(WordPart::QuotedVar(var));
-                i = end;
-                continue;
+        if c == b'$'
+            && let Some((var, end)) = read_var_ref(bytes, i)
+        {
+            if !buf.is_empty() {
+                word.push(WordPart::Quoted(std::mem::take(&mut buf)));
             }
+            word.push(WordPart::QuotedVar(var));
+            i = end;
+            continue;
         }
         buf.push(c as char);
         i += 1;

@@ -49,9 +49,7 @@ impl<'a, E: Env, F: FileSystem> Evaluator<'a, E, F> {
                 let s = self.expand(arg);
                 self.eval_unary(*op, &s)
             }
-            Primary::Binary { op, lhs, rhs } => {
-                self.eval_binary(*op, lhs, rhs)
-            }
+            Primary::Binary { op, lhs, rhs } => self.eval_binary(*op, lhs, rhs),
             Primary::StringNonEmpty(w) => {
                 let s = self.expand(w);
                 Ok(!s.is_empty())
@@ -76,7 +74,11 @@ impl<'a, E: Env, F: FileSystem> Evaluator<'a, E, F> {
             FileReadable => self.fs.access(Path::new(arg), AccessMode::Read),
             FileWritable => self.fs.access(Path::new(arg), AccessMode::Write),
             FileExecutable => self.fs.access(Path::new(arg), AccessMode::Execute),
-            FileNonEmpty => self.fs.stat(Path::new(arg)).map(|s| s.size > 0).unwrap_or(false),
+            FileNonEmpty => self
+                .fs
+                .stat(Path::new(arg))
+                .map(|s| s.size > 0)
+                .unwrap_or(false),
             FileSetUid => stat_mode_bit(&self.fs.stat(Path::new(arg)), 0o4000),
             FileSetGid => stat_mode_bit(&self.fs.stat(Path::new(arg)), 0o2000),
             FileSticky => stat_mode_bit(&self.fs.stat(Path::new(arg)), 0o1000),
@@ -98,7 +100,9 @@ impl<'a, E: Env, F: FileSystem> Evaluator<'a, E, F> {
 
             // Misc
             FdIsTty => {
-                let fd: i32 = arg.parse().map_err(|_| EvalError::InvalidFd(arg.to_string()))?;
+                let fd: i32 = arg
+                    .parse()
+                    .map_err(|_| EvalError::InvalidFd(arg.to_string()))?;
                 self.fs.is_tty(fd)
             }
             StringEmpty => arg.is_empty(),
@@ -111,12 +115,12 @@ impl<'a, E: Env, F: FileSystem> Evaluator<'a, E, F> {
 
     fn eval_var_set(&self, raw: &str) -> bool {
         // Split optional `name[subscript]` suffix.
-        if let Some(open) = raw.find('[') {
-            if raw.ends_with(']') {
-                let name = &raw[..open];
-                let sub = &raw[open + 1..raw.len() - 1];
-                return self.env.array_element_set(name, sub);
-            }
+        if let Some(open) = raw.find('[')
+            && raw.ends_with(']')
+        {
+            let name = &raw[..open];
+            let sub = &raw[open + 1..raw.len() - 1];
+            return self.env.array_element_set(name, sub);
         }
         // Bare name → either a scalar set, or the [0] element of an array.
         self.env.var(raw).is_some() || self.env.array_element_set(raw, "0")
@@ -129,10 +133,12 @@ impl<'a, E: Env, F: FileSystem> Evaluator<'a, E, F> {
             FileSameInode => {
                 let l = self.expand(lhs);
                 let r = self.expand(rhs);
-                Ok(match (self.fs.stat(Path::new(&l)), self.fs.stat(Path::new(&r))) {
-                    (Ok(a), Ok(b)) => a.dev == b.dev && a.ino == b.ino,
-                    _ => false,
-                })
+                Ok(
+                    match (self.fs.stat(Path::new(&l)), self.fs.stat(Path::new(&r))) {
+                        (Ok(a), Ok(b)) => a.dev == b.dev && a.ino == b.ino,
+                        _ => false,
+                    },
+                )
             }
             FileNewer => {
                 let l = self.expand(lhs);
@@ -422,5 +428,4 @@ mod tests {
         assert_eq!(env.last_rematch[1].as_deref(), Some("user"));
         assert_eq!(env.last_rematch[2].as_deref(), Some("42"));
     }
-
 }

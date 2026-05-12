@@ -14,8 +14,15 @@ pub enum Expr {
 /// A single primary test.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Primary {
-    Unary { op: UnaryOp, arg: Word },
-    Binary { op: BinaryOp, lhs: Word, rhs: Word },
+    Unary {
+        op: UnaryOp,
+        arg: Word,
+    },
+    Binary {
+        op: BinaryOp,
+        lhs: Word,
+        rhs: Word,
+    },
     /// Bare word: `[[ $x ]]` is equivalent to `-n $x`.
     StringNonEmpty(Word),
 }
@@ -24,32 +31,32 @@ pub enum Primary {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum UnaryOp {
     // File existence / type
-    FileExists,            // -a, -e
-    FileRegular,           // -f
-    FileDir,               // -d
-    FileBlock,             // -b
-    FileChar,              // -c
-    FileSymlink,           // -h, -L
-    FileNamedPipe,         // -p
-    FileSocket,            // -S
+    FileExists,    // -a, -e
+    FileRegular,   // -f
+    FileDir,       // -d
+    FileBlock,     // -b
+    FileChar,      // -c
+    FileSymlink,   // -h, -L
+    FileNamedPipe, // -p
+    FileSocket,    // -S
     // File permissions / attributes
-    FileReadable,          // -r
-    FileWritable,          // -w
-    FileExecutable,        // -x
-    FileNonEmpty,          // -s
-    FileSetUid,            // -u
-    FileSetGid,            // -g
-    FileSticky,            // -k
-    FileOwnedByUid,        // -O
-    FileOwnedByGid,        // -G
-    FileNewerThanAccess,   // -N
+    FileReadable,        // -r
+    FileWritable,        // -w
+    FileExecutable,      // -x
+    FileNonEmpty,        // -s
+    FileSetUid,          // -u
+    FileSetGid,          // -g
+    FileSticky,          // -k
+    FileOwnedByUid,      // -O
+    FileOwnedByGid,      // -G
+    FileNewerThanAccess, // -N
     // Misc
-    FdIsTty,               // -t
-    StringEmpty,           // -z
-    StringNonEmpty,        // -n
-    VarSet,                // -v
-    VarIsNameRef,          // -R
-    ShellOptSet,           // -o
+    FdIsTty,        // -t
+    StringEmpty,    // -z
+    StringNonEmpty, // -n
+    VarSet,         // -v
+    VarIsNameRef,   // -R
+    ShellOptSet,    // -o
 }
 
 impl UnaryOp {
@@ -119,22 +126,22 @@ impl UnaryOp {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BinaryOp {
     // File comparisons
-    FileSameInode,  // -ef
-    FileNewer,      // -nt
-    FileOlder,      // -ot
+    FileSameInode, // -ef
+    FileNewer,     // -nt
+    FileOlder,     // -ot
     // String
-    StrLt,          // < (lexicographic)
-    StrGt,          // > (lexicographic)
-    GlobMatch,      // == / = (pattern, per [[)
-    GlobNotMatch,   // !=     (pattern, per [[)
-    RegexMatch,     // =~
+    StrLt,        // < (lexicographic)
+    StrGt,        // > (lexicographic)
+    GlobMatch,    // == / = (pattern, per [[)
+    GlobNotMatch, // !=     (pattern, per [[)
+    RegexMatch,   // =~
     // Arithmetic
-    ArithEq,        // -eq
-    ArithNe,        // -ne
-    ArithLt,        // -lt
-    ArithLe,        // -le
-    ArithGt,        // -gt
-    ArithGe,        // -ge
+    ArithEq, // -eq
+    ArithNe, // -ne
+    ArithLt, // -lt
+    ArithLe, // -le
+    ArithGt, // -gt
+    ArithGe, // -ge
 }
 
 impl BinaryOp {

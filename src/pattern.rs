@@ -168,13 +168,13 @@ fn translate_bracket(inner: &[u8], out: &mut String) {
                 continue;
             }
         }
-        if c == b'\\' {
-            if let Some(&nc) = inner.get(i + 1) {
-                out.push('\\');
-                out.push(nc as char);
-                i += 2;
-                continue;
-            }
+        if c == b'\\'
+            && let Some(&nc) = inner.get(i + 1)
+        {
+            out.push('\\');
+            out.push(nc as char);
+            i += 2;
+            continue;
         }
         if c == b']' || c == b'\\' {
             out.push('\\');

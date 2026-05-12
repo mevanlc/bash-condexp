@@ -162,4 +162,3 @@ fn nested_brackets_match_bash() {
         &[("x", "5"), ("name", "alice")],
     );
 }
-

@@ -131,10 +131,7 @@ fn cond_pattern_match_glob() {
     check("$TDIR == /usr/homes/*", &[("TDIR", "/usr/homes/chet")]);
     // Quoted star is literal — should not match the path
     check(r"$TDIR == /usr/homes/\*", &[("TDIR", "/usr/homes/chet")]);
-    check(
-        "$TDIR == '/usr/homes/*'",
-        &[("TDIR", "/usr/homes/chet")],
-    );
+    check("$TDIR == '/usr/homes/*'", &[("TDIR", "/usr/homes/chet")]);
 }
 
 #[test]
@@ -246,10 +243,7 @@ fn cond_regex_quoted_string_substring() {
 fn cond_regexp1_var_with_quoted_class() {
     // VAR='[[:alpha:]]'
     // [[ $VAR =~ '[[:alpha:]]' ]] -> true (literal "[[:alpha:]]" matches)
-    check(
-        r"$VAR =~ '[[:alpha:]]'",
-        &[("VAR", "[[:alpha:]]")],
-    );
+    check(r"$VAR =~ '[[:alpha:]]'", &[("VAR", "[[:alpha:]]")]);
     // [[ a =~ '[[:alpha:]]' ]] -> false (literal pattern doesn't match "a")
     check(r"a =~ '[[:alpha:]]'", &[]);
     // [[ a =~ [[:alpha:]] ]] -> true (real char class)
@@ -263,10 +257,7 @@ fn cond_regexp1_var_with_quoted_class() {
 #[test]
 fn cond_regexp1_aab_optional_group() {
     // line=aab; [[ $line =~ [[:space:]]*(a)?b ]] -> true
-    check(
-        "$line =~ [[:space:]]*(a)?b",
-        &[("line", "aab")],
-    );
+    check("$line =~ [[:space:]]*(a)?b", &[("line", "aab")]);
 }
 
 #[test]

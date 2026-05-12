@@ -109,9 +109,7 @@ impl Parser {
                     _ => Err(ParseError::UnterminatedDoubleBracket { pos: open.start }),
                 }
             }
-            Some(Token::OpenParen) | Some(Token::CloseParen) => {
-                Err(ParseError::ParensNotSupported)
-            }
+            Some(Token::OpenParen) | Some(Token::CloseParen) => Err(ParseError::ParensNotSupported),
             Some(Token::CloseBracket) => {
                 let t = self.peek().unwrap();
                 Err(ParseError::UnexpectedToken {
@@ -279,8 +277,20 @@ mod tests {
         let e = p("-e foo && -f foo");
         match e {
             Expr::And(a, b) => {
-                assert!(matches!(*a, Expr::Primary(Primary::Unary { op: UnaryOp::FileExists, .. })));
-                assert!(matches!(*b, Expr::Primary(Primary::Unary { op: UnaryOp::FileRegular, .. })));
+                assert!(matches!(
+                    *a,
+                    Expr::Primary(Primary::Unary {
+                        op: UnaryOp::FileExists,
+                        ..
+                    })
+                ));
+                assert!(matches!(
+                    *b,
+                    Expr::Primary(Primary::Unary {
+                        op: UnaryOp::FileRegular,
+                        ..
+                    })
+                ));
             }
             _ => panic!("expected And, got {e:?}"),
         }
@@ -318,7 +328,11 @@ mod tests {
     fn binary_string_eq() {
         let e = p("$x == foo*");
         match e {
-            Expr::Primary(Primary::Binary { op: BinaryOp::GlobMatch, lhs, rhs }) => {
+            Expr::Primary(Primary::Binary {
+                op: BinaryOp::GlobMatch,
+                lhs,
+                rhs,
+            }) => {
                 assert_eq!(lhs.parts, vec![WordPart::Var("x".into())]);
                 assert_eq!(rhs.parts, vec![WordPart::Literal("foo*".into())]);
             }
@@ -342,7 +356,10 @@ mod tests {
     fn regex_match() {
         let e = p("$line =~ ^foo");
         match e {
-            Expr::Primary(Primary::Binary { op: BinaryOp::RegexMatch, .. }) => {}
+            Expr::Primary(Primary::Binary {
+                op: BinaryOp::RegexMatch,
+                ..
+            }) => {}
             _ => panic!("expected RegexMatch, got {e:?}"),
         }
     }
@@ -360,7 +377,10 @@ mod tests {
 
     #[test]
     fn parens_are_not_supported() {
-        assert!(matches!(parse("( -f x )"), Err(ParseError::ParensNotSupported)));
+        assert!(matches!(
+            parse("( -f x )"),
+            Err(ParseError::ParensNotSupported)
+        ));
     }
 
     #[test]
