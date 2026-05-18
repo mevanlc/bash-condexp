@@ -388,10 +388,10 @@ fn read_var_ref(bytes: &[u8], start: usize) -> Option<(String, usize)> {
     if next == b'{' {
         let mut j = start + 2;
         let name_start = j;
-        while j < bytes.len() && is_ident_cont(bytes[j]) {
+        while j < bytes.len() && bytes[j] != b'}' {
             j += 1;
         }
-        if j == name_start || bytes.get(j) != Some(&b'}') {
+        if bytes.get(j) != Some(&b'}') {
             return None;
         }
         let name = std::str::from_utf8(&bytes[name_start..j]).ok()?.to_owned();
@@ -501,6 +501,23 @@ mod tests {
             t,
             vec![Token::Word(Word {
                 parts: vec![WordPart::Var("HOME".to_string())]
+            })]
+        );
+    }
+
+    #[test]
+    fn lex_custom_braced_vars() {
+        let t = toks("${}${/}${//}${.}${/.}");
+        assert_eq!(
+            t,
+            vec![Token::Word(Word {
+                parts: vec![
+                    WordPart::Var("".to_string()),
+                    WordPart::Var("/".to_string()),
+                    WordPart::Var("//".to_string()),
+                    WordPart::Var(".".to_string()),
+                    WordPart::Var("/.".to_string()),
+                ]
             })]
         );
     }

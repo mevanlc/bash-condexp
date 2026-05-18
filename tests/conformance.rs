@@ -153,6 +153,10 @@ fn file_tests_match_bash() {
     check("-s $p", &[("p", &path)]);
     check("-d $p", &[("p", &path)]);
     check("-e $p", &[("p", "/no/such/path/abc123")]);
+    check("-e $p", &[("p", "")]);
+    check("-r $p", &[("p", "")]);
+    check("$p -nt $empty", &[("p", &path), ("empty", "")]);
+    check("$empty -ot $p", &[("p", &path), ("empty", "")]);
 }
 
 #[test]

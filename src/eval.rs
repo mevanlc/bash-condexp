@@ -61,40 +61,33 @@ impl<'a, E: Env, F: FileSystem> Evaluator<'a, E, F> {
         use UnaryOp::*;
         Ok(match op {
             // Existence / type
-            FileExists => self.fs.stat(Path::new(arg)).is_ok(),
-            FileRegular => stat_kind_is(&self.fs.stat(Path::new(arg)), FileKind::Regular),
-            FileDir => stat_kind_is(&self.fs.stat(Path::new(arg)), FileKind::Directory),
-            FileBlock => stat_kind_is(&self.fs.stat(Path::new(arg)), FileKind::BlockDevice),
-            FileChar => stat_kind_is(&self.fs.stat(Path::new(arg)), FileKind::CharDevice),
-            FileSymlink => stat_kind_is(&self.fs.lstat(Path::new(arg)), FileKind::Symlink),
-            FileNamedPipe => stat_kind_is(&self.fs.stat(Path::new(arg)), FileKind::NamedPipe),
-            FileSocket => stat_kind_is(&self.fs.stat(Path::new(arg)), FileKind::Socket),
+            FileExists => self.stat_path(arg).is_ok(),
+            FileRegular => stat_kind_is(&self.stat_path(arg), FileKind::Regular),
+            FileDir => stat_kind_is(&self.stat_path(arg), FileKind::Directory),
+            FileBlock => stat_kind_is(&self.stat_path(arg), FileKind::BlockDevice),
+            FileChar => stat_kind_is(&self.stat_path(arg), FileKind::CharDevice),
+            FileSymlink => stat_kind_is(&self.lstat_path(arg), FileKind::Symlink),
+            FileNamedPipe => stat_kind_is(&self.stat_path(arg), FileKind::NamedPipe),
+            FileSocket => stat_kind_is(&self.stat_path(arg), FileKind::Socket),
 
             // Permissions / attributes
-            FileReadable => self.fs.access(Path::new(arg), AccessMode::Read),
-            FileWritable => self.fs.access(Path::new(arg), AccessMode::Write),
-            FileExecutable => self.fs.access(Path::new(arg), AccessMode::Execute),
-            FileNonEmpty => self
-                .fs
-                .stat(Path::new(arg))
-                .map(|s| s.size > 0)
-                .unwrap_or(false),
-            FileSetUid => stat_mode_bit(&self.fs.stat(Path::new(arg)), 0o4000),
-            FileSetGid => stat_mode_bit(&self.fs.stat(Path::new(arg)), 0o2000),
-            FileSticky => stat_mode_bit(&self.fs.stat(Path::new(arg)), 0o1000),
+            FileReadable => self.access_path(arg, AccessMode::Read),
+            FileWritable => self.access_path(arg, AccessMode::Write),
+            FileExecutable => self.access_path(arg, AccessMode::Execute),
+            FileNonEmpty => self.stat_path(arg).map(|s| s.size > 0).unwrap_or(false),
+            FileSetUid => stat_mode_bit(&self.stat_path(arg), 0o4000),
+            FileSetGid => stat_mode_bit(&self.stat_path(arg), 0o2000),
+            FileSticky => stat_mode_bit(&self.stat_path(arg), 0o1000),
             FileOwnedByUid => self
-                .fs
-                .stat(Path::new(arg))
+                .stat_path(arg)
                 .map(|s| s.uid == self.fs.effective_uid())
                 .unwrap_or(false),
             FileOwnedByGid => self
-                .fs
-                .stat(Path::new(arg))
+                .stat_path(arg)
                 .map(|s| s.gid == self.fs.effective_gid())
                 .unwrap_or(false),
             FileNewerThanAccess => self
-                .fs
-                .stat(Path::new(arg))
+                .stat_path(arg)
                 .map(|s| stat_after(s.mtime, s.atime))
                 .unwrap_or(false),
 
@@ -111,6 +104,24 @@ impl<'a, E: Env, F: FileSystem> Evaluator<'a, E, F> {
             VarIsNameRef => self.env.is_nameref(arg),
             ShellOptSet => self.env.shell_opt(arg),
         })
+    }
+
+    fn stat_path(&self, arg: &str) -> std::io::Result<FileStat> {
+        if arg.is_empty() {
+            return Err(std::io::ErrorKind::NotFound.into());
+        }
+        self.fs.stat(Path::new(arg))
+    }
+
+    fn lstat_path(&self, arg: &str) -> std::io::Result<FileStat> {
+        if arg.is_empty() {
+            return Err(std::io::ErrorKind::NotFound.into());
+        }
+        self.fs.lstat(Path::new(arg))
+    }
+
+    fn access_path(&self, arg: &str, mode: AccessMode) -> bool {
+        !arg.is_empty() && self.fs.access(Path::new(arg), mode)
     }
 
     fn eval_var_set(&self, raw: &str) -> bool {
@@ -133,18 +144,16 @@ impl<'a, E: Env, F: FileSystem> Evaluator<'a, E, F> {
             FileSameInode => {
                 let l = self.expand(lhs);
                 let r = self.expand(rhs);
-                Ok(
-                    match (self.fs.stat(Path::new(&l)), self.fs.stat(Path::new(&r))) {
-                        (Ok(a), Ok(b)) => a.dev == b.dev && a.ino == b.ino,
-                        _ => false,
-                    },
-                )
+                Ok(match (self.stat_path(&l), self.stat_path(&r)) {
+                    (Ok(a), Ok(b)) => a.dev == b.dev && a.ino == b.ino,
+                    _ => false,
+                })
             }
             FileNewer => {
                 let l = self.expand(lhs);
                 let r = self.expand(rhs);
-                let a = self.fs.stat(Path::new(&l));
-                let b = self.fs.stat(Path::new(&r));
+                let a = self.stat_path(&l);
+                let b = self.stat_path(&r);
                 Ok(match (a, b) {
                     (Ok(_), Err(_)) => true,
                     (Ok(a), Ok(b)) => stat_after(a.mtime, b.mtime),
@@ -154,8 +163,8 @@ impl<'a, E: Env, F: FileSystem> Evaluator<'a, E, F> {
             FileOlder => {
                 let l = self.expand(lhs);
                 let r = self.expand(rhs);
-                let a = self.fs.stat(Path::new(&l));
-                let b = self.fs.stat(Path::new(&r));
+                let a = self.stat_path(&l);
+                let b = self.stat_path(&r);
                 Ok(match (a, b) {
                     (Err(_), Ok(_)) => true,
                     (Ok(a), Ok(b)) => stat_after(b.mtime, a.mtime),
@@ -318,6 +327,21 @@ mod tests {
     }
 
     #[test]
+    fn custom_braced_vars_expand() {
+        let mut env = MapEnv::new()
+            .with_var("", "path")
+            .with_var("/", "basename")
+            .with_var("//", "parent")
+            .with_var(".", "path-no-ext")
+            .with_var("/.", "basename-no-ext");
+        assert!(run("${} == path", &mut env));
+        assert!(run("${/} == basename", &mut env));
+        assert!(run("${//} == parent", &mut env));
+        assert!(run("${.} == path-no-ext", &mut env));
+        assert!(run("${/.} == basename-no-ext", &mut env));
+    }
+
+    #[test]
     fn lex_compare_lt_gt() {
         assert!(run_default("apple < banana"));
         assert!(!run_default("banana < apple"));
@@ -363,6 +387,27 @@ mod tests {
         let mut env = MapEnv::new();
         assert!(!run("-e /this/path/does/not/exist/abc123", &mut env));
         assert!(!run("-f /this/path/does/not/exist/abc123", &mut env));
+    }
+
+    #[test]
+    fn file_test_empty_path() {
+        let mut env = MapEnv::new();
+        assert!(!run("-e ''", &mut env));
+        assert!(!run("-f ''", &mut env));
+        assert!(!run("-d ''", &mut env));
+        assert!(!run("-r ''", &mut env));
+        assert!(!run("-w ''", &mut env));
+        assert!(!run("-x ''", &mut env));
+    }
+
+    #[test]
+    fn file_comparison_empty_path() {
+        let f = NamedTempFile::new().unwrap();
+        let path = f.path().to_str().unwrap().to_string();
+        let mut env = MapEnv::new().with_var("p", &path);
+        assert!(!run("$p -ef ''", &mut env));
+        assert!(run("$p -nt ''", &mut env));
+        assert!(run("'' -ot $p", &mut env));
     }
 
     #[test]
