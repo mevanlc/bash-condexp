@@ -47,7 +47,7 @@ fn ours(expr: &str, env: &mut MapEnv) -> bool {
         .unwrap_or_else(|e| panic!("eval {expr:?}: {e}"))
 }
 
-fn bashes(expr: &str, vars: &BTreeMap<String, String>) -> bool {
+fn bashes(expr: &str, vars: &BTreeMap<String, String>, options: &[(&str, bool)]) -> bool {
     // We always wrap with explicit [[ ]] for bash; our parser accepts both
     // forms, so we can test either way. We strip surrounding [[ ]] from our
     // expr if present, then add bash's brackets.
@@ -57,7 +57,11 @@ fn bashes(expr: &str, vars: &BTreeMap<String, String>) -> bool {
         .and_then(|s| s.strip_suffix("]]"))
         .map(str::trim)
         .unwrap_or(body);
-    let script = format!("[[ {body} ]]");
+    let option_setup: String = options
+        .iter()
+        .map(|(name, enabled)| format!("shopt -{} {name}; ", if *enabled { "s" } else { "u" }))
+        .collect();
+    let script = format!("{option_setup}[[ {body} ]]");
     let bash_path = which_bash();
     let mut cmd = Command::new(&bash_path);
     cmd.arg("-c").arg(&script);
@@ -82,13 +86,20 @@ fn bashes(expr: &str, vars: &BTreeMap<String, String>) -> bool {
 }
 
 fn check(expr: &str, vars: &[(&str, &str)]) {
+    check_with_options(expr, vars, &[]);
+}
+
+fn check_with_options(expr: &str, vars: &[(&str, &str)], options: &[(&str, bool)]) {
     let mut env = vars_to_map(vars);
+    for (name, enabled) in options {
+        env.options.insert((*name).to_owned(), *enabled);
+    }
     let map: BTreeMap<String, String> = vars
         .iter()
         .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
         .collect();
     let our_result = ours(expr, &mut env);
-    let bash_result = bashes(expr, &map);
+    let bash_result = bashes(expr, &map, options);
     assert_eq!(
         our_result, bash_result,
         "mismatch on `{expr}` with vars {vars:?}: ours={our_result}, bash={bash_result}"
@@ -113,6 +124,9 @@ fn arith_ops_match_bash() {
     check("$x -le 5", &[("x", "5")]);
     check("$x -gt 4", &[("x", "5")]);
     check("$x -ge 5", &[("x", "5")]);
+    check("'2**3**2' -eq 512", &[]);
+    check("'010 + 0x10 + 2#10 + 64#_' -eq 89", &[]);
+    check("recursive -eq 3", &[("recursive", "x+1"), ("x", "2")]);
 }
 
 #[test]
@@ -121,6 +135,60 @@ fn glob_match_match_bash() {
     check("$f == *.txt", &[("f", "report.md")]);
     check("$f == report.[!a-z]*", &[("f", "report.1234")]);
     check("$f == [[:digit:]][[:digit:]]", &[("f", "42")]);
+    check("$f == +([[:digit:]])", &[("f", "42")]);
+}
+
+#[test]
+fn parameter_transformations_match_bash() {
+    let vars = &[("path", "a/b/c"), ("value", "abcabc")];
+    check("${path#*/} == b/c", vars);
+    check("${path##*/} == c", vars);
+    check("${path%/*} == a/b", vars);
+    check("${path%%/*} == a", vars);
+    check("${value/a/X} == Xbcabc", vars);
+    check("${value//a/X} == XbcXbc", vars);
+    check("${value/#a/X} == Xbcabc", vars);
+    check("${value/%c/X} == abcabX", vars);
+    check("${value//?/[&]} == '[a][b][c][a][b][c]'", vars);
+    check(r"${value//?/\&} == '&&&&&&'", vars);
+}
+
+#[test]
+fn parameter_length_substring_case_and_defaults_match_bash() {
+    let vars = &[
+        ("value", "abcdef"),
+        ("offset", "1"),
+        ("letters", "abCab"),
+        ("empty", ""),
+        ("set", "value"),
+    ];
+    check("${#value} -eq 6", vars);
+    check("${value:2:3} == cde", vars);
+    check("${value: -2} == ef", vars);
+    check("${value:offset+1:2} == cd", vars);
+    check("${letters^} == AbCab", vars);
+    check("${letters^^@(a|b)} == ABCAB", vars);
+    check("${letters,,C} == abcab", vars);
+    check("${missing-fallback} == fallback", vars);
+    check("${empty-fallback} == ''", vars);
+    check("${empty:-fallback} == fallback", vars);
+    check("${set+alternate} == alternate", vars);
+    check("${empty:+alternate} == ''", vars);
+    check("foo != ${missing-'*'}", vars);
+}
+
+#[test]
+fn parameter_pattern_options_match_bash() {
+    let vars = &[("value", "aaab"), ("upper", "Aaa")];
+    check("${value##+(a)} == aaab", vars);
+    check_with_options("${value##+(a)} == b", vars, &[("extglob", true)]);
+    check_with_options("${upper/a/X} == Xaa", vars, &[("nocasematch", true)]);
+    check_with_options("${upper#a*} == Aaa", vars, &[("nocasematch", true)]);
+    check_with_options(
+        "${value/a/[&]} == '[&]aab'",
+        vars,
+        &[("patsub_replacement", false)],
+    );
 }
 
 #[test]

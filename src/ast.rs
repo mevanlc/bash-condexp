@@ -205,7 +205,14 @@ impl Word {
     /// Was any part of the word quoted? Used by `==` / `=~` to decide
     /// whether the pattern should be treated literally.
     pub fn any_quoted(&self) -> bool {
-        self.parts.iter().any(|p| matches!(p, WordPart::Quoted(_)))
+        self.parts.iter().any(|part| {
+            matches!(
+                part,
+                WordPart::Quoted(_)
+                    | WordPart::QuotedVar(_)
+                    | WordPart::Expansion { quoted: true, .. }
+            )
+        })
     }
 
     pub fn push(&mut self, part: WordPart) {
@@ -219,6 +226,7 @@ impl fmt::Display for Word {
             match p {
                 WordPart::Literal(s) | WordPart::Quoted(s) => f.write_str(s)?,
                 WordPart::Var(name) | WordPart::QuotedVar(name) => write!(f, "${{{}}}", name)?,
+                WordPart::Expansion { expansion, .. } => write!(f, "{expansion}")?,
             }
         }
         Ok(())
@@ -239,4 +247,133 @@ pub enum WordPart {
     /// The expanded value is matched **literally** on the RHS of `==` /
     /// `=~`, per bash's "quoted variable expansion is literal" rule.
     QuotedVar(String),
+    /// A braced parameter expansion that transforms or conditionally replaces
+    /// the parameter value.
+    Expansion {
+        expansion: ParameterExpansion,
+        /// Whether the complete expansion appeared in double quotes. This
+        /// controls the literalness of its result when the containing word is
+        /// later used as a glob or regular-expression pattern.
+        quoted: bool,
+    },
+}
+
+/// A structured `${parameter...}` expansion.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParameterExpansion {
+    pub name: String,
+    pub op: ParameterOp,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ParameterOp {
+    Length,
+    Remove {
+        kind: RemoveKind,
+        pattern: Word,
+    },
+    Replace {
+        kind: ReplaceKind,
+        pattern: Word,
+        replacement: Word,
+    },
+    Substring {
+        offset: Word,
+        length: Option<Word>,
+    },
+    CaseModify {
+        kind: CaseModifyKind,
+        pattern: Option<Word>,
+    },
+    DefaultValue {
+        test_null: bool,
+        word: Word,
+    },
+    AlternateValue {
+        test_null: bool,
+        word: Word,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum RemoveKind {
+    ShortestPrefix,
+    LongestPrefix,
+    ShortestSuffix,
+    LongestSuffix,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ReplaceKind {
+    First,
+    All,
+    Prefix,
+    Suffix,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CaseModifyKind {
+    UpperFirst,
+    UpperAll,
+    LowerFirst,
+    LowerAll,
+}
+
+impl fmt::Display for ParameterExpansion {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if matches!(self.op, ParameterOp::Length) {
+            return write!(f, "${{#{}}}", self.name);
+        }
+        write!(f, "${{{}", self.name)?;
+        match &self.op {
+            ParameterOp::Length => unreachable!(),
+            ParameterOp::Remove { kind, pattern } => {
+                let op = match kind {
+                    RemoveKind::ShortestPrefix => "#",
+                    RemoveKind::LongestPrefix => "##",
+                    RemoveKind::ShortestSuffix => "%",
+                    RemoveKind::LongestSuffix => "%%",
+                };
+                write!(f, "{op}{pattern}")?;
+            }
+            ParameterOp::Replace {
+                kind,
+                pattern,
+                replacement,
+            } => {
+                let op = match kind {
+                    ReplaceKind::First => "/",
+                    ReplaceKind::All => "//",
+                    ReplaceKind::Prefix => "/#",
+                    ReplaceKind::Suffix => "/%",
+                };
+                write!(f, "{op}{pattern}/{replacement}")?;
+            }
+            ParameterOp::Substring { offset, length } => {
+                write!(f, ":{offset}")?;
+                if let Some(length) = length {
+                    write!(f, ":{length}")?;
+                }
+            }
+            ParameterOp::CaseModify { kind, pattern } => {
+                let op = match kind {
+                    CaseModifyKind::UpperFirst => "^",
+                    CaseModifyKind::UpperAll => "^^",
+                    CaseModifyKind::LowerFirst => ",",
+                    CaseModifyKind::LowerAll => ",,",
+                };
+                write!(f, "{op}")?;
+                if let Some(pattern) = pattern {
+                    write!(f, "{pattern}")?;
+                }
+            }
+            ParameterOp::DefaultValue { test_null, word } => {
+                write!(f, "{}{}", if *test_null { ":-" } else { "-" }, word)?;
+            }
+            ParameterOp::AlternateValue { test_null, word } => {
+                write!(f, "{}{}", if *test_null { ":+" } else { "+" }, word)?;
+            }
+        }
+        write!(f, "}}")
+    }
 }

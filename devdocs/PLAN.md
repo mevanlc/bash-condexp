@@ -1,5 +1,11 @@
 # Plan: `bash-condexp` — Rust lib for bash conditional expressions
 
+> Historical note: the initial v1 boundary below was subsequently expanded.
+> The implementation now includes structured scalar parameter transformations,
+> all extglob operators, and full scalar arithmetic expressions. See the
+> [README](../README.md) and [current limitations](./LIMITATIONS.md) for the
+> implemented contract.
+
 ## Context
 
 The user wants a Rust library that parses and evaluates bash conditional

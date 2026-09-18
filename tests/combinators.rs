@@ -24,7 +24,7 @@ impl bash_condexp::Env for CountingEnv {
         self.lookups.set(self.lookups.get() + 1);
         self.inner.var(name)
     }
-    fn shell_opt(&self, name: &str) -> bool {
+    fn shell_opt(&self, name: &str) -> Option<bool> {
         self.inner.shell_opt(name)
     }
 }

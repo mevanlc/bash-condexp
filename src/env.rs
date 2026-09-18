@@ -14,7 +14,15 @@ pub trait Env {
     }
 
     /// Whether the shell option `name` (e.g. `nocasematch`, `extglob`) is on.
-    fn shell_opt(&self, _name: &str) -> bool {
+    /// `None` uses the evaluator's bash-compatible default for options whose
+    /// defaults affect evaluation.
+    fn shell_opt(&self, _name: &str) -> Option<bool> {
+        None
+    }
+
+    /// Assign a scalar value during arithmetic evaluation. Returning `false`
+    /// tells the evaluator that this environment is read-only.
+    fn set_var(&mut self, _name: &str, _value: String) -> bool {
         false
     }
 
@@ -67,8 +75,12 @@ impl Env for MapEnv {
     fn is_nameref(&self, name: &str) -> bool {
         self.namerefs.get(name).copied().unwrap_or(false)
     }
-    fn shell_opt(&self, name: &str) -> bool {
-        self.options.get(name).copied().unwrap_or(false)
+    fn shell_opt(&self, name: &str) -> Option<bool> {
+        self.options.get(name).copied()
+    }
+    fn set_var(&mut self, name: &str, value: String) -> bool {
+        self.vars.insert(name.to_owned(), value);
+        true
     }
     fn set_bash_rematch(&mut self, groups: &[Option<String>]) {
         self.last_rematch = groups.to_vec();
@@ -94,5 +106,10 @@ impl StdEnv {
 impl Env for StdEnv {
     fn var(&self, name: &str) -> Option<&str> {
         self.snapshot.get(name).map(String::as_str)
+    }
+
+    fn set_var(&mut self, name: &str, value: String) -> bool {
+        self.snapshot.insert(name.to_owned(), value);
+        true
     }
 }

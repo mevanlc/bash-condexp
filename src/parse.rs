@@ -19,10 +19,43 @@
 
 use crate::ast::{BinaryOp, Expr, Primary, UnaryOp, Word};
 use crate::error::ParseError;
-use crate::lex::{Spanned, Token, lex};
+use crate::lex::{Spanned, Token, lex_with_options};
 
+/// Syntax options applied while parsing a conditional expression.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ParseOptions {
+    punctuation_variables: bool,
+}
+
+impl ParseOptions {
+    /// Bash-compatible parsing options.
+    pub const fn new() -> Self {
+        Self {
+            punctuation_variables: false,
+        }
+    }
+
+    /// Allow empty and ASCII-punctuation-only names in braced parameter
+    /// expansions, such as the variables exposed for fd-style placeholders.
+    #[must_use]
+    pub const fn punctuation_variables(mut self, enabled: bool) -> Self {
+        self.punctuation_variables = enabled;
+        self
+    }
+
+    pub(crate) const fn allows_punctuation_variables(self) -> bool {
+        self.punctuation_variables
+    }
+}
+
+/// Parse using the default, Bash-compatible syntax options.
 pub fn parse(input: &str) -> Result<Expr, ParseError> {
-    let tokens = lex(input)?;
+    parse_with_options(input, ParseOptions::default())
+}
+
+/// Parse using explicit syntax options.
+pub fn parse_with_options(input: &str, options: ParseOptions) -> Result<Expr, ParseError> {
+    let tokens = lex_with_options(input, options)?;
     let mut p = Parser::new(tokens);
     let expr = p.parse_expr()?;
     if !p.at_end() {

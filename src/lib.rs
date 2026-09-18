@@ -27,6 +27,16 @@
 //! parse("[[ -f Cargo.toml && -d src ]]").unwrap();            // grouped
 //! ```
 //!
+//! [`parse`] uses the bash-compatible parameter-name grammar. Empty and
+//! ASCII-punctuation-only names used by fd-style placeholders can be enabled
+//! per parse:
+//!
+//! ```
+//! # use bash_condexp::{ParseOptions, parse_with_options};
+//! let options = ParseOptions::default().punctuation_variables(true);
+//! parse_with_options("${/.} == README", options).unwrap();
+//! ```
+//!
 //! There is no `( ... )` grouping (use `[[ ... ]]` instead) and no
 //! `-a` / `-o` legacy combinators (use `&&` / `||`).
 //!
@@ -39,9 +49,12 @@
 //! - **Strings**: `==` `=` `!=` `<` `>` (`==` / `!=` are pattern-matching
 //!   per bash; `<` / `>` are byte-wise lexicographic in v1)
 //! - **Arithmetic**: `-eq` `-ne` `-lt` `-le` `-gt` `-ge`
-//!   (operands: integer literal, `$var`, or empty → 0)
+//!   (full scalar integer expressions, including mutation through
+//!   [`Env::set_var`])
 //! - **Regex**: `=~` (POSIX-ERE-ish via the `regex` crate; populates
 //!   `BASH_REMATCH` through [`Env::set_bash_rematch`])
+//! - **Parameter transformations**: length, substring, prefix/suffix removal,
+//!   replacement, case modification, and pure default/alternate values
 //!
 //! ## Combinators
 //!
@@ -53,13 +66,10 @@
 //!
 //! ## Limitations (v1)
 //!
-//! - No command substitution `$(...)`, arithmetic expansion `$((...))`,
-//!   or process substitution. Only `$var` / `${var}` are expanded.
-//! - Arithmetic operands are integer literals, `$var`, or empty (= 0).
-//!   The full `$((…))` grammar (operators, ternary, hex/octal, ...) is
-//!   not yet supported.
-//! - Extglob (`?(...)`, `*(...)`, `+(...)`, `@(...)`, `!(...)`) is not
-//!   yet supported in `==` / `!=` patterns.
+//! - No command substitution `$(...)`, general arithmetic expansion
+//!   `$((...))`, process substitution, arrays, or indirect parameter expansion.
+//! - Assignment/error parameter forms (`:=`, `:?`, `=`, `?`) are rejected;
+//!   the pure `-`, `:-`, `+`, and `:+` forms are supported.
 //! - `<` and `>` use byte comparison, not locale-aware `strcoll`.
 //! - `=~` uses the Rust `regex` crate, which is close to POSIX ERE but
 //!   differs in a few edge cases — notably it rejects lone `\x` (it
@@ -74,6 +84,7 @@
 //! in-memory test double; [`StdEnv`] snapshots `std::env`; [`StdFs`] uses
 //! `std::fs` plus `libc` on unix targets.
 
+mod arith;
 pub mod ast;
 pub mod env;
 pub mod error;
@@ -83,9 +94,13 @@ pub mod lex;
 pub mod parse;
 pub mod pattern;
 
-pub use ast::{BinaryOp, Expr, Primary, UnaryOp, Word, WordPart};
+pub use ast::{
+    BinaryOp, CaseModifyKind, Expr, ParameterExpansion, ParameterOp, Primary, RemoveKind,
+    ReplaceKind, UnaryOp, Word, WordPart,
+};
 pub use env::{Env, MapEnv, StdEnv};
 pub use error::{EvalError, ParseError};
 pub use eval::Evaluator;
 pub use fs_abs::{AccessMode, FileKind, FileStat, FileSystem, StdFs};
-pub use parse::parse;
+pub use parse::{ParseOptions, parse, parse_with_options};
+pub use pattern::{CompiledGlob, GlobOptions, PatternError};

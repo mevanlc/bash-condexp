@@ -53,9 +53,19 @@ supported.
 
 ## Word Expansion
 
-Only `$name` and `${name}` variable references are expanded. Quoting is tracked
-so the evaluator can preserve bash's literalness rules for the right-hand side
-of `==`, `=`, `!=`, and `=~`.
+`$name` and plain `${name}` references are expanded. The following scalar
+parameter transformations are also supported, including nested parameter
+expansions in their subsidiary words:
+
+- length: `${#name}`
+- substring: `${name:offset}` and `${name:offset:length}`
+- shortest/longest prefix and suffix removal: `#`, `##`, `%`, `%%`
+- first/all/prefix/suffix pattern replacement: `/`, `//`, `/#`, `/%`
+- first/all uppercase and lowercase modification: `^`, `^^`, `,`, `,,`
+- pure default and alternate values: `-`, `:-`, `+`, `:+`
+
+Quoting is tracked per word part so the evaluator can preserve bash's
+literalness rules for patterns, regular expressions, and replacement `&`.
 
 Supported:
 
@@ -63,6 +73,8 @@ Supported:
 [[ $name == al* ]]
 [[ "${name}" == "alice" ]]
 [[ ${line} =~ ^user-([0-9]+)$ ]]
+[[ ${path##*/} == Cargo.toml ]]
+[[ ${name:-anonymous} == alice ]]
 ```
 
 Not implemented:
@@ -71,15 +83,20 @@ Not implemented:
 [[ $(uname) == Darwin ]]
 [[ $((1 + 2)) -eq 3 ]]
 [[ -e <(printf '%s\n' data) ]]
-[[ ${name:-fallback} == alice ]]
 [[ ${array[0]} == value ]]
+[[ ${name:=fallback} == alice ]]
 [[ $'a\nb' =~ $'\n' ]]
 ```
 
-In real bash, many of these expansions happen before or during conditional
-evaluation. In this crate, unsupported expansion syntax is not evaluated as a
-shell feature. Callers should perform any needed shell-like expansion before
-calling `parse`, or expose the desired value through `Env::var`.
+Assignment/error parameter forms (`:=`, `:?`, `=`, `?`) are rejected rather
+than mutating the host or producing shell diagnostics. Empty and
+ASCII-punctuation-only host names are rejected by the default bash-compatible
+parser and require `ParseOptions::punctuation_variables(true)`. Bash syntax has
+precedence in that mode, including the `${#}` special parameter. Slash
+replacement syntax is inherently ambiguous for punctuation-only host names such
+as `/`; expose a normal identifier alias for those values when replacement is
+needed. Other unambiguous transformations work, for example `${/#._}` removes
+`._` from the start of the value named `/`.
 
 ## Arithmetic Operands
 
@@ -92,33 +109,31 @@ Bash evaluates arithmetic comparison operands as arithmetic expressions:
 [[ n++ -gt 3 ]]
 ```
 
-This crate's v1 arithmetic support is narrower. Each operand may be:
-
-- an empty string, which evaluates as `0`
-- a signed decimal integer literal
-- a bare variable name whose value is then parsed by the same narrow rule
-- a `$name` / `${name}` expansion whose value is then parsed by the same rule
-
-Examples that work:
+This crate evaluates full scalar integer expressions in arithmetic comparison
+operands and substring indices. This includes recursive scalar variable lookup,
+decimal/octal/hexadecimal and `base#number` literals, unary/binary/logical
+operators, power, ternary and comma operators, assignment, and pre/post
+increment/decrement. Examples:
 
 ```bash
 [[ "" -eq 0 ]]
 [[ -5 -lt 10 ]]
 [[ $port -lt 9000 ]]
 [[ port -lt 9000 ]]    # arithmetic context looks up variable `port`
+[[ '2**8' -eq 256 ]]
+[[ 'n++, n' -eq 8 ]]
 ```
 
-Examples that bash supports but this crate rejects as invalid arithmetic:
+The expression still has to occupy one conditional word, as it does in bash;
+quote expressions that contain spaces. Arrays and subscripts are not supported:
 
 ```bash
-[[ 1 + 2 -eq 3 ]]
-[[ 0x10 -eq 16 ]]
-[[ 2**8 -eq 256 ]]
 [[ arr[0] -eq 7 ]]
 ```
 
-The practical workaround is to evaluate arithmetic before passing values into
-the expression, then compare simple decimal values.
+Mutation calls `Env::set_var`. A read-only host receives
+`EvalError::ArithmeticAssignmentUnsupported`; `MapEnv` and `StdEnv` implement
+writes to their in-memory maps. This does not mutate the process environment.
 
 ## Glob Patterns
 
@@ -142,8 +157,8 @@ Examples:
 [[ $file != "*.txt" ]]   # quoted star is literal
 ```
 
-The main missing feature is extglob. Real bash treats the right-hand side as if
-`extglob` were enabled inside `[[ ... ]]` pattern matching:
+All five extglob operators are supported. Like bash, conditional matching acts
+as if `extglob` were enabled:
 
 ```bash
 [[ $arg == -+([0-9]) ]]
@@ -151,9 +166,10 @@ The main missing feature is extglob. Real bash treats the right-hand side as if
 [[ $path == !(tmp)/* ]]
 ```
 
-This crate does not implement `?(...)`, `*(...)`, `+(...)`, `@(...)`, or
-`!(...)` extglob operators. Those patterns should be avoided or expressed with
-regex via `=~` where that is acceptable.
+Case modification also always recognizes extglob. Parameter prefix/suffix
+removal and replacement recognize it only when
+`Env::shell_opt("extglob") == Some(true)`. `nocasematch` affects conditional
+matching and replacement, but not removal or case modification.
 
 ## Regex Matching
 
@@ -231,8 +247,9 @@ implementation that answers `array_element_set` accurately.
 name reference created with `declare -n`; this crate can only know that if your
 `Env` says so.
 
-`-o optname` calls `Env::shell_opt(optname)`. Options such as `nocasematch`
-affect matching only if exposed through `Env`.
+`-o optname` calls `Env::shell_opt(optname)`. The return type is `Option<bool>`:
+`Some` is an explicit host value, while `None` uses evaluator defaults.
+`patsub_replacement` defaults on, and `extglob` and `nocasematch` default off.
 
 `StdEnv` snapshots process environment variables. It does not know bash
 namerefs, arrays, shell options, or where to persist `BASH_REMATCH`.
