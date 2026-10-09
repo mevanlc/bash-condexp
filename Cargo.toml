@@ -3,6 +3,7 @@ name = "bash-condexp"
 version = "0.0.0"
 edition = "2024"
 description = "bash-like conditional (test) expression evaluation lib in pure rust"
+repository = "https://github.com/mevanlc/bash-condexp"
 license = "MIT"
 
 [dependencies]
